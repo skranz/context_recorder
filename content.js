@@ -107,6 +107,44 @@
         });
     }, true);
 
+    // --- User Action Listener (Input & Textarea Blur) ---
+    // Records the value of text-based inputs and textareas when they lose focus.
+    document.addEventListener('blur', (event) => {
+        const target = event.target;
+        const isTextInput = target.tagName === 'INPUT' && /^(text|password|search|email|url|tel|number|date|time|datetime-local|month|week)$/i.test(target.type);
+        const isTextArea = target.tagName === 'TEXTAREA';
+
+        if (isTextInput || isTextArea) {
+            logStep('USER_ACTION_INPUT', {
+                targetElement: target.outerHTML,
+                cssPath: getCssPath(target),
+                value: target.value
+            });
+        }
+    }, true);
+
+    // --- User Action Listener (Changes) ---
+    // Records changes for checkboxes, radio buttons, and select dropdowns.
+    document.addEventListener('change', (event) => {
+        const target = event.target;
+        if (target.tagName === 'INPUT' && (target.type === 'checkbox' || target.type === 'radio')) {
+            logStep('USER_ACTION_CHANGE', {
+                targetElement: target.outerHTML,
+                cssPath: getCssPath(target),
+                value: target.value,
+                checked: target.checked
+            });
+        } else if (target.tagName === 'SELECT') {
+            const selectedOption = target.options[target.selectedIndex];
+            logStep('USER_ACTION_CHANGE', {
+                targetElement: target.outerHTML,
+                cssPath: getCssPath(target),
+                value: target.value,
+                selectedText: selectedOption ? selectedOption.text : ''
+            });
+        }
+    }, true);
+
     // --- Listen for messages from the background script ---
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.command === 'initialize') {
