@@ -2,6 +2,7 @@
 const startButton = document.getElementById('startRecording');
 const stopButton = document.getElementById('stopRecording');
 const captureButton = document.getElementById('captureSource');
+const mutationsCheckbox = document.getElementById('recordMutations');
 const statusDisplay = document.getElementById('status');
 
 // Function to update the UI based on the recording state
@@ -9,7 +10,8 @@ function updateUI(isRecording) {
     statusDisplay.textContent = `Status: ${isRecording ? 'Recording...' : 'Idle'}`;
     startButton.disabled = isRecording;
     stopButton.disabled = !isRecording;
-    captureButton.disabled = !isRecording; // Also control the new button's state
+    captureButton.disabled = !isRecording;
+    // The mutations checkbox is always enabled to allow pre-configuration
 }
 
 // Add click listener for the start button
@@ -49,7 +51,6 @@ captureButton.addEventListener('click', () => {
             statusDisplay.textContent = 'Error capturing source.';
         } else if (response && response.status === 'captured') {
             statusDisplay.textContent = 'Page source captured!';
-            // Revert status message after a short delay
             setTimeout(() => {
                 chrome.storage.local.get('isRecording', (data) => {
                     updateUI(data.isRecording || false);
@@ -59,8 +60,14 @@ captureButton.addEventListener('click', () => {
     });
 });
 
+// Add change listener for the mutations checkbox
+mutationsCheckbox.addEventListener('change', () => {
+    chrome.storage.local.set({ recordMutations: mutationsCheckbox.checked });
+});
 
-// On popup open, get the current recording state and update the UI
-chrome.storage.local.get('isRecording', (data) => {
+// On popup open, get the current state and update the UI
+chrome.storage.local.get(['isRecording', 'recordMutations'], (data) => {
     updateUI(data.isRecording || false);
+    // Set the checkbox state based on stored value, defaulting to false
+    mutationsCheckbox.checked = data.recordMutations || false;
 });

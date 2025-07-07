@@ -6,6 +6,7 @@
     window.hasAiRecorder = true;
 
     let stepCounter = 0;
+    let observer; // Keep the observer in a broader scope
 
     // --- Log a step to the background script ---
     function logStep(type, data) {
@@ -20,64 +21,27 @@
         chrome.runtime.sendMessage({ command: 'logStep', data: stepData });
     }
 
-    // ==================================================================
-    // NEW: CONSOLE & ERROR INTERCEPTION
-    // ==================================================================
-
-    // --- Intercept Console Messages ---
-    const originalConsole = {
-        log: console.log,
-        warn: console.warn,
-        error: console.error,
-        info: console.info,
-    };
-
+    // --- Intercept Console Messages & Errors ---
+    const originalConsole = { log: console.log, warn: console.warn, error: console.error, info: console.info };
     function formatConsoleArgs(args) {
-        // Simple serialization for console arguments
         return args.map(arg => {
-            if (arg instanceof Error) {
-                return arg.stack || arg.message;
-            }
-            if (typeof arg === 'object' && arg !== null) {
-                try {
-                    return JSON.stringify(arg);
-                } catch (e) {
-                    return '[Unserializable Object]';
-                }
-            }
+            if (arg instanceof Error) { return arg.stack || arg.message; }
+            if (typeof arg === 'object' && arg !== null) { try { return JSON.stringify(arg); } catch (e) { return '[Unserializable Object]'; } }
             return String(arg);
         });
     }
-
     Object.keys(originalConsole).forEach(level => {
         console[level] = (...args) => {
-            logStep(`CONSOLE_${level.toUpperCase()}`, {
-                messages: formatConsoleArgs(args),
-            });
-            // Call the original console function to maintain browser behavior
+            logStep(`CONSOLE_${level.toUpperCase()}`, { messages: formatConsoleArgs(args) });
             originalConsole[level].apply(console, args);
         };
     });
-
-    // --- Intercept Uncaught Exceptions ---
     window.onerror = function(message, source, lineno, colno, error) {
-        logStep('CONSOLE_ERROR', {
-            errorType: 'Uncaught Exception',
-            message: message,
-            source: source,
-            lineno: lineno,
-            colno: colno,
-            stack: error ? error.stack : 'No stack available.',
-        });
-        // Return false to allow the default browser error handler to run
+        logStep('CONSOLE_ERROR', { errorType: 'Uncaught Exception', message, source, lineno, colno, stack: error ? error.stack : 'No stack available.' });
         return false;
     };
 
-    // ==================================================================
-    // EXISTING LOGIC (WITH MINOR UPDATES)
-    // ==================================================================
-
-    // --- Utility function to generate a CSS Path for an element ---
+    // --- Utility function to generate a CSS Path ---
     function getCssPath(element) {
         if (!(element instanceof Element)) return;
         const path = [];
@@ -87,16 +51,14 @@
             if (currentElement.id) {
                 selector = `#${currentElement.id}`;
                 path.unshift(selector);
-                break; // ID is unique, so we can stop.
+                break;
             } else {
                 const classNames = Array.from(currentElement.classList).filter(c => c).map(c => `.${c}`).join('');
                 selector += classNames;
                 let sibling = currentElement;
                 let nth = 1;
                 while ((sibling = sibling.previousElementSibling)) {
-                    if (sibling.nodeName.toLowerCase() === currentElement.nodeName.toLowerCase()) {
-                        nth++;
-                    }
+                    if (sibling.nodeName.toLowerCase() === currentElement.nodeName.toLowerCase()) { nth++; }
                 }
                 if (currentElement.parentElement && currentElement.parentElement.querySelectorAll(selector).length > 1) {
                     selector += `:nth-of-type(${nth})`;
@@ -110,9 +72,7 @@
 
     // --- Utility function to serialize a mutation record ---
     function serializeMutation(mutation) {
-        const serialized = {
-            type: mutation.type,
-        };
+        const serialized = { type: mutation.type };
         if (mutation.type === 'childList') {
             serialized.addedNodes = Array.from(mutation.addedNodes).map(node => node.outerHTML || node.textContent);
             serialized.removedNodes = Array.from(mutation.removedNodes).map(node => node.outerHTML || node.textContent);
@@ -121,23 +81,55 @@
             serialized.oldValue = mutation.oldValue;
             serialized.newValue = mutation.target.getAttribute(mutation.attributeName);
         }
-        serialized.target = getCssPath(mutation.target); // Use CSS path for target
+        serialized.target = getCssPath(mutation.target);
         return serialized;
     }
 
-    // --- MutationObserver Setup ---
-    const observer = new MutationObserver((mutationsList) => {
-        const serializedMutations = mutationsList.map(serializeMutation);
-        if (serializedMutations.length > 0) {
-            logStep('DOM_MUTATION', { mutations: serializedMutations });
+    // --- MutationObserver Management ---
+    function setupMutationObserver() {
+        if (observer) observer.disconnect(); // Disconnect any existing observer
+
+        observer = new MutationObserver((mutationsList) => {
+            const serializedMutations = mutationsList.map(serializeMutation);
+            if (serializedMutations.length > 0) {
+                logStep('DOM_MUTATION', { mutations: serializedMutations });
+            }
+        });
+
+        observer.observe(document.body, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+            attributeOldValue: true
+        });
+        console.log('Mutation observer is now active.');
+    }
+
+    function stopMutationObserver() {
+        if (observer) {
+            observer.disconnect();
+            observer = null;
+            console.log('Mutation observer has been stopped.');
+        }
+    }
+
+    // Check initial setting for recording mutations
+    chrome.storage.local.get('recordMutations', (data) => {
+        if (data.recordMutations) {
+            setupMutationObserver();
         }
     });
 
-    observer.observe(document.body, {
-        attributes: true,
-        childList: true,
-        subtree: true,
-        attributeOldValue: true
+    // Listen for real-time changes to the setting
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (changes.recordMutations) {
+            const shouldRecord = changes.recordMutations.newValue;
+            if (shouldRecord) {
+                setupMutationObserver();
+            } else {
+                stopMutationObserver();
+            }
+        }
     });
 
     // --- Initial Page Load ---
@@ -148,10 +140,9 @@
 
     // --- User Action Listener (Clicks) ---
     document.addEventListener('click', (event) => {
-        const cssPath = getCssPath(event.target);
         logStep('USER_ACTION_CLICK', {
             targetElement: event.target.outerHTML,
-            cssPath: cssPath
+            cssPath: getCssPath(event.target)
         });
     }, true);
 
