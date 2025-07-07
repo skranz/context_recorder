@@ -1,6 +1,61 @@
 // State is managed in chrome.storage.local to be persistent
 // across service worker restarts, as in-memory variables are not reliable.
 
+// This function will be executed in the page's main world.
+// It must be self-contained and not rely on any external variables.
+function mainWorldScript() {
+    // We need a way to send data back to the content script
+    function dispatchEventToContentScript(type, data) {
+        const detail = { type, data };
+        window.dispatchEvent(new CustomEvent('__ai_recorder_event__', { detail }));
+    }
+
+    // --- Helper function to format console arguments ---
+    function formatConsoleArgs(args) {
+        return Array.from(args).map(arg => {
+            if (arg instanceof Error) { return arg.stack || arg.message; }
+            if (typeof arg === 'object' && arg !== null) {
+                try { return JSON.stringify(arg); }
+                catch (e) { return '[Unserializable Object]'; }
+            }
+            return String(arg);
+        });
+    }
+
+    // --- Intercept Page's Console Messages ---
+    const consoleLevels = ['log', 'warn', 'error', 'info'];
+    consoleLevels.forEach(level => {
+        const original = console[level];
+        console[level] = function(...args) {
+            dispatchEventToContentScript('CONSOLE', {
+                level: level.toUpperCase(),
+                messages: formatConsoleArgs(args)
+            });
+            original.apply(console, args);
+        };
+    });
+
+    // --- Intercept Page's Uncaught Errors ---
+    const originalOnError = window.onerror;
+    window.onerror = function(message, source, lineno, colno, error) {
+        dispatchEventToContentScript('ERROR', {
+            errorType: 'Uncaught Exception',
+            message,
+            source,
+            lineno,
+            colno,
+            stack: error ? error.stack : 'No stack available.'
+        });
+        if (originalOnError) {
+            return originalOnError.apply(window, arguments);
+        }
+        return false;
+    };
+}
+
+
+// --- Main Extension Logic ---
+
 // Listen for messages from the popup or content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.command === 'start') {
@@ -45,15 +100,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
+// Helper function to inject all necessary scripts
+async function injectScripts(tabId) {
+    try {
+        // 1. Inject the content script to listen for events
+        await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ['content.js']
+        });
+        // 2. Inject the main world script to capture page-level logs
+        await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: mainWorldScript,
+            world: 'MAIN'
+        });
+        console.log('All scripts injected successfully.');
+    } catch (err) {
+        console.error(`Failed to inject scripts: ${err}`);
+        throw err; // re-throw to be caught by callers
+    }
+}
+
+
 // Handle navigation to re-inject the content script into new pages
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https'))) {
         chrome.storage.local.get('isRecording', (data) => {
             if (data.isRecording) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    files: ['content.js']
-                }).catch(err => {
+                injectScripts(tabId).catch(err => {
                     console.error(`Failed to inject script on navigation: ${err}`);
                 });
             }
@@ -68,14 +142,10 @@ function startRecording(tab, sendResponse) {
             return;
         }
         chrome.storage.local.set({ isRecording: true, recordedSteps: [] }, () => {
-            chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                files: ['content.js']
-            }).then(() => {
-                console.log('Content script injected.');
+            injectScripts(tab.id).then(() => {
                 sendResponse({ status: 'recording' });
             }).catch(err => {
-                console.error('Failed to inject script:', err);
+                console.error('Failed to start recording due to injection error:', err);
                 chrome.storage.local.set({ isRecording: false, recordedSteps: [] });
                 sendResponse({ status: 'error', message: err.message });
             });
@@ -107,8 +177,6 @@ function downloadRecording(recordedSteps) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     chrome.downloads.download({
         url: dataUrl,
-        //filename: `workflow-recording-${timestamp}.json`,
-        // I currently prefer a simpler filename
         filename: `workflow-recording.json`,
         saveAs: true
     }).catch(err => {
