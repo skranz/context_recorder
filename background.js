@@ -1,10 +1,9 @@
 // State is managed in chrome.storage.local to be persistent
 // across service worker restarts, as in-memory variables are not reliable.
 
-// This function will be executed in the page's main world.
-// It must be self-contained and not rely on any external variables.
 function mainWorldScript() {
-    // We need a way to send data back to the content script
+    // This function patches the page's console and error handlers.
+    // It's designed to run without interfering with the page's own functionality.
     function dispatchEventToContentScript(type, data) {
         const detail = { type, data };
         window.dispatchEvent(new CustomEvent('__ai_recorder_event__', { detail }));
@@ -24,12 +23,14 @@ function mainWorldScript() {
     const consoleLevels = ['log', 'warn', 'error', 'info'];
     consoleLevels.forEach(level => {
         const original = console[level];
+        // The .bind() is crucial to maintain the correct 'this' context for the native console function.
+        const boundOriginal = original.bind(console);
         console[level] = function(...args) {
             dispatchEventToContentScript('CONSOLE', {
                 level: level.toUpperCase(),
                 messages: formatConsoleArgs(args)
             });
-            original.apply(console, args);
+            boundOriginal(...args);
         };
     });
 
@@ -50,13 +51,13 @@ function mainWorldScript() {
     };
 }
 
+
 // --- Main Extension Logic ---
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.command === 'start') {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs.length === 0) {
-                console.error("No active tab found.");
                 sendResponse({ status: 'error', message: 'No active tab found.' });
                 return;
             }
@@ -72,7 +73,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const updatedSteps = data.recordedSteps || [];
                 updatedSteps.push(request.data);
                 chrome.storage.local.set({ recordedSteps: updatedSteps });
-                console.log('Step logged:', request.data);
             }
         });
     } else if (request.command === 'capturePageSource') {
@@ -80,7 +80,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (tabs.length > 0) {
                 chrome.tabs.sendMessage(tabs[0].id, { command: 'capturePageSource' }, (response) => {
                     if (chrome.runtime.lastError) {
-                        console.error('Could not send message to capture source: ', chrome.runtime.lastError.message);
                         sendResponse({ status: 'error', message: chrome.runtime.lastError.message });
                     } else {
                         sendResponse(response);
@@ -94,45 +93,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-// Helper function to inject all scripts and then initialize the content script
 async function injectAndInitialize(tabId) {
     try {
-        // 1. Inject the content script
+        // Inject scripts onto the page. This will run ASAP on an already loaded page.
         await chrome.scripting.executeScript({
             target: { tabId: tabId },
             files: ['content.js']
         });
 
-        // 2. Inject the main world script
         await chrome.scripting.executeScript({
             target: { tabId: tabId },
             func: mainWorldScript,
             world: 'MAIN'
         });
 
-        // 3. Get settings and send initialize message to content script
         const settings = await chrome.storage.local.get('recordMutations');
-        await chrome.tabs.sendMessage(tabId, {
+        chrome.tabs.sendMessage(tabId, {
             command: 'initialize',
             settings: {
                 recordMutations: settings.recordMutations || false
             }
         });
-
-        console.log('All scripts injected and initialized successfully.');
+        console.log('Scripts injected and initialized for tab:', tabId);
     } catch (err) {
-        console.error(`Failed to inject/initialize scripts: ${err}`);
-        throw err;
+        console.warn(`Could not inject scripts into tab ${tabId}: ${err.message}`);
+        throw err; // Allow the caller to handle the error
     }
 }
 
+// This listener is for handling navigations that occur DURING a recording session.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https'))) {
+    // Inject scripts when the new page is loading to catch as much as possible.
+    if (changeInfo.status === 'loading') {
         chrome.storage.local.get('isRecording', (data) => {
             if (data.isRecording) {
-                injectAndInitialize(tabId).catch(err => {
-                    console.error(`Failed to inject script on navigation: ${err}`);
-                });
+                injectAndInitialize(tabId);
             }
         });
     }
@@ -144,6 +139,7 @@ function startRecording(tab, sendResponse) {
             sendResponse({ status: 'already recording' });
             return;
         }
+        // THE FIX: Set recording state, then inject scripts directly without reloading.
         chrome.storage.local.set({ isRecording: true, recordedSteps: [] }, () => {
             injectAndInitialize(tab.id).then(() => {
                 sendResponse({ status: 'recording' });
