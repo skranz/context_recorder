@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Test Page</title>
+    <title>Comprehensive Test Page</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -23,18 +23,40 @@
             width: 100%;
             max-width: 500px;
         }
-        h1 {
+        h1, h2 {
             color: #1a1a1a;
             text-align: center;
             margin-top: 0;
         }
-        input[type="text"] {
-            width: calc(100% - 22px);
-            padding: 10px;
+        h2 {
+            font-size: 1.2rem;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #eee;
+        }
+        .form-group {
             margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
             font-size: 1rem;
+            box-sizing: border-box;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .checkbox-group input {
+            margin-right: 10px;
         }
         button {
             width: 100%;
@@ -46,6 +68,7 @@
             font-size: 1rem;
             cursor: pointer;
             transition: background-color 0.2s;
+            margin-top: 1rem;
         }
         button:hover {
             background-color: #0056b3;
@@ -61,8 +84,6 @@
         }
         #error-button-container {
             margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid #eee;
         }
         #error-button-container button {
             background-color: #dc3545; /* Red color for danger */
@@ -77,45 +98,75 @@
     <div class="container">
         <h1>Interaction Test</h1>
 
-        <input type="text" id="textInput" placeholder="Enter some text here...">
+        <a href="https://ejd.econ.mathematik.uni-ulm.de/">EJD LINK</a>
 
-        <button id="displayButton">Display Text Below</button>
+        <div class="form-group">
+            <label for="textInput">Enter some text:</label>
+            <input type="text" id="textInput" placeholder="Enter some text and lose focus...">
+        </div>
+
+        <h2>Additional Options</h2>
+
+        <div class="form-group">
+            <label>Select your preferences:</label>
+            <div class="checkbox-group">
+                <input type="checkbox" id="option1" name="options" value="fast">
+                <label for="option1">Fast Delivery</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="option2" name="options" value="gift">
+                <label for="option2">Gift Wrap</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="category-select">Choose a category:</label>
+            <select name="categories" id="category-select">
+                <option value="">--Please choose an option--</option>
+                <option value="tech">Technology</option>
+                <option value="books">Books</option>
+                <option value="home">Home Goods</option>
+            </select>
+        </div>
+
+        <button id="displayButton">Show Current State</button>
 
         <div id="output-area"></div>
 
-        <!-- NEW: Button to log a message and cause an error -->
         <div id="error-button-container">
-            <!-- This button has no ID itself to test the CSS path recorder -->
             <button>Log Message & Cause Error</button>
         </div>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-
             // Get references to the HTML elements
             const textInput = document.getElementById('textInput');
             const displayButton = document.getElementById('displayButton');
             const outputArea = document.getElementById('output-area');
-            // Get reference to the new error button using its parent's ID
             const errorButton = document.querySelector('#error-button-container button');
+            const option1 = document.getElementById('option1');
+            const option2 = document.getElementById('option2');
+            const categorySelect = document.getElementById('category-select');
 
-            // --- Listener for the first button ---
+            // --- Listener to display the state of all inputs ---
             displayButton.addEventListener('click', () => {
-                const inputText = textInput.value;
-                const newParagraph = document.createElement('p');
+                const inputText = textInput.value || '[empty]';
+                const isOption1Checked = option1.checked;
+                const isOption2Checked = option2.checked;
+                const selectedCategory = categorySelect.options[categorySelect.selectedIndex].text;
 
-                if (inputText.trim() === '') {
-                    newParagraph.textContent = 'You clicked the button, but the input was empty.';
-                } else {
-                    newParagraph.textContent = `You entered: "${inputText}"`;
-                }
+                const state = `
+                    <p><strong>Text Input:</strong> ${inputText}</p>
+                    <p><strong>Fast Delivery:</strong> ${isOption1Checked}</p>
+                    <p><strong>Gift Wrap:</strong> ${isOption2Checked}</p>
+                    <p><strong>Category:</strong> ${selectedCategory}</p>
+                `;
 
-                outputArea.innerHTML = '';
-                outputArea.appendChild(newParagraph);
+                outputArea.innerHTML = state;
             });
 
-            // --- Listener for the second (error) button ---
+            // --- Listener for the error button ---
             errorButton.addEventListener('click', () => {
                 // This will be captured by the content script
                 console.log('Button click is about to trigger an error.');
