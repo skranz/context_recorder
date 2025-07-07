@@ -107,7 +107,9 @@ function downloadRecording(recordedSteps) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     chrome.downloads.download({
         url: dataUrl,
-        filename: `workflow-recording-${timestamp}.json`,
+        //filename: `workflow-recording-${timestamp}.json`,
+        // I currently prefer a simpler filename
+        filename: `workflow-recording.json`,
         saveAs: true
     }).catch(err => {
         console.error('Download failed:', err);

@@ -5,6 +5,71 @@
     if (window.hasAiRecorder) return;
     window.hasAiRecorder = true;
 
+    // --- SCRIPT TO INJECT INTO THE MAIN WORLD ---
+    // This script runs in the page's own context, allowing it to
+    // patch console and window.onerror for the page's scripts.
+    function injectPageScript() {
+        const script = document.createElement('script');
+        script.textContent = `
+            (function() {
+                // We need a way to send data back to the content script
+                function dispatchEventToContentScript(type, data) {
+                    const detail = { type, data };
+                    window.dispatchEvent(new CustomEvent('__ai_recorder_event__', { detail }));
+                }
+
+                // --- Helper function to format console arguments ---
+                function formatConsoleArgs(args) {
+                    return Array.from(args).map(arg => {
+                        if (arg instanceof Error) { return arg.stack || arg.message; }
+                        if (typeof arg === 'object' && arg !== null) {
+                            try { return JSON.stringify(arg); }
+                            catch (e) { return '[Unserializable Object]'; }
+                        }
+                        return String(arg);
+                    });
+                }
+
+                // --- Intercept Page's Console Messages ---
+                const consoleLevels = ['log', 'warn', 'error', 'info'];
+                consoleLevels.forEach(level => {
+                    const original = console[level];
+                    console[level] = function(...args) {
+                        dispatchEventToContentScript('CONSOLE', {
+                            level: level.toUpperCase(),
+                            messages: formatConsoleArgs(args)
+                        });
+                        original.apply(console, args);
+                    };
+                });
+
+                // --- Intercept Page's Uncaught Errors ---
+                const originalOnError = window.onerror;
+                window.onerror = function(message, source, lineno, colno, error) {
+                    dispatchEventToContentScript('ERROR', {
+                        errorType: 'Uncaught Exception',
+                        message,
+                        source,
+                        lineno,
+                        colno,
+                        stack: error ? error.stack : 'No stack available.'
+                    });
+                    if (originalOnError) {
+                        // Call previous handler if it existed
+                        return originalOnError.apply(window, arguments);
+                    }
+                    return false; // Let the default handler run
+                };
+            })();
+        `;
+        // Inject the script into the page's head and then remove it.
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+    }
+
+
+    // --- MAIN CONTENT SCRIPT LOGIC (ISOLATED WORLD) ---
+
     let stepCounter = 0;
     let observer; // Keep the observer in a broader scope
 
@@ -21,7 +86,18 @@
         chrome.runtime.sendMessage({ command: 'logStep', data: stepData });
     }
 
-    // --- Intercept Console Messages & Errors ---
+    // --- Listen for events dispatched from the injected page script ---
+    window.addEventListener('__ai_recorder_event__', (event) => {
+        const { type, data } = event.detail;
+        if (type === 'CONSOLE') {
+            logStep(`CONSOLE_${data.level}`, { messages: data.messages });
+        } else if (type === 'ERROR') {
+            logStep('CONSOLE_ERROR', data);
+        }
+    }, false);
+
+    // --- Intercept Console Messages & Errors (from THIS content script) ---
+    // This is kept to log events originating from the content script itself.
     const originalConsole = { log: console.log, warn: console.warn, error: console.error, info: console.info };
     function formatConsoleArgs(args) {
         return args.map(arg => {
@@ -37,11 +113,11 @@
         };
     });
     window.onerror = function(message, source, lineno, colno, error) {
-        logStep('CONSOLE_ERROR', { errorType: 'Uncaught Exception', message, source, lineno, colno, stack: error ? error.stack : 'No stack available.' });
+        logStep('CONSOLE_ERROR', { errorType: 'Uncaught Exception from Content Script', message, source, lineno, colno, stack: error ? error.stack : 'No stack available.' });
         return false;
     };
 
-    // --- Utility function to generate a CSS Path ---
+    // --- Utility function to generate a CSS Path (Unchanged) ---
     function getCssPath(element) {
         if (!(element instanceof Element)) return;
         const path = [];
@@ -70,7 +146,7 @@
         return path.join(' > ');
     }
 
-    // --- Utility function to serialize a mutation record ---
+    // --- Utility function to serialize a mutation record (Unchanged) ---
     function serializeMutation(mutation) {
         const serialized = { type: mutation.type };
         if (mutation.type === 'childList') {
@@ -85,7 +161,7 @@
         return serialized;
     }
 
-    // --- MutationObserver Management ---
+    // --- MutationObserver Management (Unchanged) ---
     function setupMutationObserver() {
         if (observer) observer.disconnect(); // Disconnect any existing observer
 
@@ -132,13 +208,17 @@
         }
     });
 
-    // --- Initial Page Load ---
+    // Inject the script to capture page-level events
+    injectPageScript();
+
+    // --- Initial Page Load (MODIFIED) ---
+    // Removed htmlSnapshot to prevent message size issues.
+    // Manual snapshots are available via the popup.
     logStep('PAGE_LOAD', {
-        title: document.title,
-        htmlSnapshot: document.documentElement.outerHTML
+        title: document.title
     });
 
-    // --- User Action Listener (Clicks) ---
+    // --- User Action Listener (Clicks) (Unchanged) ---
     document.addEventListener('click', (event) => {
         logStep('USER_ACTION_CLICK', {
             targetElement: event.target.outerHTML,
@@ -146,7 +226,7 @@
         });
     }, true);
 
-    // --- Listen for messages from the background script ---
+    // --- Listen for messages from the background script (Unchanged) ---
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.command === 'capturePageSource') {
             logStep('MANUAL_SNAPSHOT', {
@@ -155,6 +235,8 @@
             });
             sendResponse({ status: 'captured' });
         }
+        // This listener needs to be able to respond asynchronously.
+        return true;
     });
 
     console.log('AI Workflow Recorder content script is active.');

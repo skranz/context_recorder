@@ -26,15 +26,37 @@ f2p.toml
 # not yet part of an explicitly included group
 ################################################
 template = '''
-Below are the files of my chrome extension
+
+
+# Files of my chrome extension
 
 {{files}}
+
+
+# Test page
+
+{{test_page}}
+
+# Recorded test workflow
+
+{{test_workflow}}
 
 ###########################################################
 # YOUR TASK
 ###########################################################
 
-The extension does not work as expected. Please correct it.
+Above are all files of a chrome extension I am developing.
+
+The extension does not work as expected.
+
+The shown workflow.json shows the record from doing the following on the test_page.html.
+
+1. Start recording
+2. Go to the text input enter some text
+3. Press "Display Text Below"
+4. Press "Log Messages and Cause Error"
+
+Analyse the problem and provide corrected versions only of the files that need change.
 
 '''
 
@@ -54,3 +76,14 @@ file_template = '''
 -----------------------------------------------------------
 '''
 
+[[test_page]]
+
+include_files = '''
+test_page.html
+'''
+
+[[test_workflow]]
+
+include_files = '''
+workflow-recording.json
+'''
