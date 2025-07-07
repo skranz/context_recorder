@@ -110,18 +110,22 @@
     // --- Listen for messages from the background script ---
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.command === 'initialize') {
-            // Configure this content script instance based on settings from background
+            // This is a synchronous command. We don't need to send a response.
+            // Just configure the script instance.
             if (request.settings.recordMutations) {
                 setupMutationObserver();
             }
+            // Do NOT return true here, as we are not calling sendResponse.
         } else if (request.command === 'capturePageSource') {
+            // This command REQUIRES an asynchronous response.
             logStep('MANUAL_SNAPSHOT', {
                 title: document.title,
                 htmlSnapshot: document.documentElement.outerHTML
             });
             sendResponse({ status: 'captured' });
+            // Return true to indicate we will send a response asynchronously.
+            return true;
         }
-        return true; // Keep message channel open for async response
     });
 
 })();
