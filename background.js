@@ -10,7 +10,6 @@ function mainWorldScript() {
         window.dispatchEvent(new CustomEvent('__ai_recorder_event__', { detail }));
     }
 
-    // --- Helper function to format console arguments ---
     function formatConsoleArgs(args) {
         return Array.from(args).map(arg => {
             if (arg instanceof Error) { return arg.stack || arg.message; }
@@ -22,7 +21,6 @@ function mainWorldScript() {
         });
     }
 
-    // --- Intercept Page's Console Messages ---
     const consoleLevels = ['log', 'warn', 'error', 'info'];
     consoleLevels.forEach(level => {
         const original = console[level];
@@ -35,7 +33,6 @@ function mainWorldScript() {
         };
     });
 
-    // --- Intercept Page's Uncaught Errors ---
     const originalOnError = window.onerror;
     window.onerror = function(message, source, lineno, colno, error) {
         dispatchEventToContentScript('ERROR', {
@@ -53,10 +50,8 @@ function mainWorldScript() {
     };
 }
 
-
 // --- Main Extension Logic ---
 
-// Listen for messages from the popup or content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.command === 'start') {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -81,7 +76,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         });
     } else if (request.command === 'capturePageSource') {
-        // Forward this command to the content script in the active tab
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs.length > 0) {
                 chrome.tabs.sendMessage(tabs[0].id, { command: 'capturePageSource' }, (response) => {
@@ -96,38 +90,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 sendResponse({ status: 'error', message: 'No active tab found.' });
             }
         });
-        return true; // Indicate async response
+        return true;
     }
 });
 
-// Helper function to inject all necessary scripts
-async function injectScripts(tabId) {
+// Helper function to inject all scripts and then initialize the content script
+async function injectAndInitialize(tabId) {
     try {
-        // 1. Inject the content script to listen for events
+        // 1. Inject the content script
         await chrome.scripting.executeScript({
             target: { tabId: tabId },
             files: ['content.js']
         });
-        // 2. Inject the main world script to capture page-level logs
+
+        // 2. Inject the main world script
         await chrome.scripting.executeScript({
             target: { tabId: tabId },
             func: mainWorldScript,
             world: 'MAIN'
         });
-        console.log('All scripts injected successfully.');
+
+        // 3. Get settings and send initialize message to content script
+        const settings = await chrome.storage.local.get('recordMutations');
+        await chrome.tabs.sendMessage(tabId, {
+            command: 'initialize',
+            settings: {
+                recordMutations: settings.recordMutations || false
+            }
+        });
+
+        console.log('All scripts injected and initialized successfully.');
     } catch (err) {
-        console.error(`Failed to inject scripts: ${err}`);
-        throw err; // re-throw to be caught by callers
+        console.error(`Failed to inject/initialize scripts: ${err}`);
+        throw err;
     }
 }
 
-
-// Handle navigation to re-inject the content script into new pages
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url && (tab.url.startsWith('http') || tab.url.startsWith('https'))) {
         chrome.storage.local.get('isRecording', (data) => {
             if (data.isRecording) {
-                injectScripts(tabId).catch(err => {
+                injectAndInitialize(tabId).catch(err => {
                     console.error(`Failed to inject script on navigation: ${err}`);
                 });
             }
@@ -142,7 +145,7 @@ function startRecording(tab, sendResponse) {
             return;
         }
         chrome.storage.local.set({ isRecording: true, recordedSteps: [] }, () => {
-            injectScripts(tab.id).then(() => {
+            injectAndInitialize(tab.id).then(() => {
                 sendResponse({ status: 'recording' });
             }).catch(err => {
                 console.error('Failed to start recording due to injection error:', err);
@@ -174,7 +177,6 @@ function downloadRecording(recordedSteps) {
     }
     const jsonString = JSON.stringify({ workflow: recordedSteps }, null, 2);
     const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonString);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     chrome.downloads.download({
         url: dataUrl,
         filename: `workflow-recording.json`,

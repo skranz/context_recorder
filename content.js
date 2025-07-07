@@ -94,32 +94,6 @@
         });
     }
 
-    function stopMutationObserver() {
-        if (observer) {
-            observer.disconnect();
-            observer = null;
-        }
-    }
-
-    // Check initial setting for recording mutations
-    chrome.storage.local.get('recordMutations', (data) => {
-        if (data.recordMutations) {
-            setupMutationObserver();
-        }
-    });
-
-    // Listen for real-time changes to the setting
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (changes.recordMutations) {
-            const shouldRecord = changes.recordMutations.newValue;
-            if (shouldRecord) {
-                setupMutationObserver();
-            } else {
-                stopMutationObserver();
-            }
-        }
-    });
-
     // --- Initial Page Load ---
     logStep('PAGE_LOAD', {
         title: document.title,
@@ -135,14 +109,19 @@
 
     // --- Listen for messages from the background script ---
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.command === 'capturePageSource') {
+        if (request.command === 'initialize') {
+            // Configure this content script instance based on settings from background
+            if (request.settings.recordMutations) {
+                setupMutationObserver();
+            }
+        } else if (request.command === 'capturePageSource') {
             logStep('MANUAL_SNAPSHOT', {
                 title: document.title,
                 htmlSnapshot: document.documentElement.outerHTML
             });
             sendResponse({ status: 'captured' });
         }
-        return true;
+        return true; // Keep message channel open for async response
     });
 
 })();
