@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Workflow Recorder</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            width: 250px;
+            padding: 15px;
+            background-color: #f0f2f5;
+            text-align: center;
+        }
+        h1 {
+            font-size: 18px;
+            color: #333;
+            margin-top: 0;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        #startRecording {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #startRecording:hover {
+            background-color: #45a049;
+        }
+        #startRecording:disabled {
+            background-color: #a5d6a7;
+            cursor: not-allowed;
+        }
+        #stopRecording {
+            background-color: #f44336;
+            color: white;
+        }
+        #stopRecording:hover {
+            background-color: #e53935;
+        }
+        #stopRecording:disabled {
+            background-color: #ef9a9a;
+            cursor: not-allowed;
+        }
+        #captureSource {
+            background-color: #ff9800; /* Orange color */
+            color: white;
+        }
+        #captureSource:hover {
+            background-color: #fb8c00;
+        }
+        #captureSource:disabled {
+            background-color: #ffcc80;
+            cursor: not-allowed;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #555;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <h1>AI Workflow Recorder</h1>
+    <p id="status">Status: Idle</p>
+    <button id="startRecording">Start Recording</button>
+    <button id="stopRecording">Stop Recording</button>
+    <button id="captureSource">Store Page Source</button>
+    <script src="popup.js"></script>
+</body>
+</html>

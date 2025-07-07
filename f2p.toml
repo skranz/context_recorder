@@ -1,0 +1,56 @@
+
+################################################
+# Which files go in?
+# Typically, you would either specify include_files
+# or exclude_files
+# We use globs instead of regular expressions
+################################################
+
+# Here all included files will be defined
+# in the corresponding groups below.
+include_files = '''
+*.js
+*.html
+manifest.json
+'''
+
+exclude_files = '''
+f2p.toml
+'''
+
+################################################
+# Global prompt template
+# You can refer to specified variables or
+# [[groups]]
+# Special variable {files} contains all files
+# not yet part of an explicitly included group
+################################################
+template = '''
+Below are the files of my chrome extension
+
+{{files}}
+
+###########################################################
+# YOUR TASK
+###########################################################
+
+The extension does not work as expected. Please correct it.
+
+'''
+
+###########################################################
+# file_template Will be applied to each found file
+# and the results will be pasted together
+###########################################################
+
+file_template = '''
+
+# FILE: {{filename}}
+```
+{{filetext}}
+```
+# END OF FILE: {{filename}}
+
+-----------------------------------------------------------
+'''
+

@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "AI Workflow Recorder",
+  "version": "1.0",
+  "description": "Records user workflows, page states, and DOM mutations to generate context for AI-powered automation.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
